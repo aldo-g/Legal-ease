@@ -1,0 +1,128 @@
+/* Procedural Pivot: Component Styles */
+
+.app-wrapper {
+  min-height: 100vh;
+  background: var(--bg-primary);
+}
+
+.auth-overlay {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  background: var(--bg-primary);
+}
+
+/* Landing Page: Procedural & Simple */
+.landing-navbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem 4rem;
+  background: white;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.landing-hero {
+  max-width: 800px;
+  margin: 6rem auto;
+  text-align: center;
+  padding: 0 2rem;
+}
+
+.landing-hero h1 {
+  font-size: 3.5rem;
+  margin-bottom: 1.5rem;
+  color: var(--text-primary);
+}
+
+.landing-hero p {
+  font-size: 1.25rem;
+  color: var(--text-secondary);
+  margin-bottom: 3rem;
+  line-height: 1.6;
+}
+
+.how-it-works {
+  max-width: 1000px;
+  margin: 4rem auto;
+  padding: 0 2rem;
+}
+
+.step-card {
+  padding: 2rem;
+  background: white;
+  border: 1px solid var(--border-subtle);
+  margin-bottom: 1.5rem;
+  border-radius: 4px;
+}
+
+.step-number {
+  font-weight: 700;
+  color: var(--accent-primary);
+  margin-bottom: 0.5rem;
+  display: block;
+}
+
+/* Case View: Detailed 3-Column */
+.case-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.case-id {
+  font-family: monospace;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  background: var(--bg-primary);
+  padding: 0.2rem 0.5rem;
+  border: 1px solid var(--border-subtle);
+}
+
+.form-dossier {
+  background: white;
+  border: 1px solid var(--border-subtle);
+  padding: 2.5rem;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.dossier-step {
+  margin-bottom: 3rem;
+}
+
+.dossier-step h3 {
+  font-size: 1.25rem;
+  margin-bottom: 1.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+/* Sidebar Styles */
+.sidebar-heading {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-secondary);
+  margin-bottom: 1rem;
+  font-weight: 700;
+}
+
+.metadata-item {
+  margin-bottom: 1rem;
+}
+
+.metadata-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  display: block;
+}
+
+.metadata-value {
+  font-size: 0.9rem;
+  font-weight: 600;
+}
