@@ -1,15 +1,16 @@
-import React, { useState } from 'react';
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../utils/AuthContext';
 
-const LoginSignup = ({ onBack }) => {
-    const [isLogin, setIsLogin] = useState(true);
+const Signup = () => {
+    const navigate = useNavigate();
+    const [name, setName] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
-    const [name, setName] = useState('');
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
 
-    const { login, signup } = useAuth();
+    const { signup } = useAuth();
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -17,13 +18,9 @@ const LoginSignup = ({ onBack }) => {
         setLoading(true);
 
         try {
-            if (isLogin) {
-                await login(email, password);
-            } else {
-                await signup(name, email, password);
-            }
+            await signup(name, email, password);
         } catch (err) {
-            setError('Authentication failed. Please check your credentials.');
+            setError(err.message || 'Signup failed. Please try again.');
         } finally {
             setLoading(false);
         }
@@ -44,25 +41,23 @@ const LoginSignup = ({ onBack }) => {
                 textAlign: 'center'
             }}>
                 <h2 className="gold-text" style={{ marginBottom: '0.5rem', fontSize: '2rem' }}>
-                    {isLogin ? 'Welcome Back' : 'Create Account'}
+                    Create Account
                 </h2>
                 <p style={{ color: 'var(--text-dim)', marginBottom: '2.5rem' }}>
-                    {isLogin ? 'Access your legal strategies.' : 'Identify your rights with AI.'}
+                    Identify your rights with AI.
                 </p>
 
                 <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.2rem' }}>
-                    {!isLogin && (
-                        <div className="input-group">
-                            <label className="input-label" style={{ textAlign: 'left', display: 'block' }}>Full Name</label>
-                            <input
-                                type="text"
-                                placeholder="John Doe"
-                                required
-                                value={name}
-                                onChange={(e) => setName(e.target.value)}
-                            />
-                        </div>
-                    )}
+                    <div className="input-group">
+                        <label className="input-label" style={{ textAlign: 'left', display: 'block' }}>Full Name</label>
+                        <input
+                            type="text"
+                            placeholder="John Doe"
+                            required
+                            value={name}
+                            onChange={(e) => setName(e.target.value)}
+                        />
+                    </div>
                     <div className="input-group">
                         <label className="input-label" style={{ textAlign: 'left', display: 'block' }}>Email Address</label>
                         <input
@@ -79,6 +74,7 @@ const LoginSignup = ({ onBack }) => {
                             type="password"
                             placeholder="••••••••"
                             required
+                            minLength={6}
                             value={password}
                             onChange={(e) => setPassword(e.target.value)}
                         />
@@ -89,15 +85,15 @@ const LoginSignup = ({ onBack }) => {
                     )}
 
                     <button className="btn-primary" type="submit" disabled={loading} style={{ marginTop: '1rem', width: '100%' }}>
-                        {loading ? 'Processing...' : (isLogin ? 'Login' : 'Sign Up')}
+                        {loading ? 'Processing...' : 'Create Account'}
                     </button>
                 </form>
 
                 <div style={{ marginTop: '2rem' }}>
                     <p style={{ color: 'var(--text-dim)', fontSize: '0.9rem' }}>
-                        {isLogin ? "Don't have an account?" : "Already have an account?"}
+                        Already have an account?
                         <button
-                            onClick={() => setIsLogin(!isLogin)}
+                            onClick={() => navigate('/login')}
                             style={{
                                 background: 'none',
                                 border: 'none',
@@ -107,11 +103,11 @@ const LoginSignup = ({ onBack }) => {
                                 cursor: 'pointer'
                             }}
                         >
-                            {isLogin ? 'Sign Up' : 'Login'}
+                            Sign In
                         </button>
                     </p>
                     <button
-                        onClick={onBack}
+                        onClick={() => navigate('/')}
                         style={{
                             background: 'none',
                             border: 'none',
@@ -129,4 +125,4 @@ const LoginSignup = ({ onBack }) => {
     );
 };
 
-export default LoginSignup;
+export default Signup;

@@ -1,17 +1,26 @@
 import { useState, useEffect, useMemo } from 'react'
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from './utils/AuthContext'
 import './App.css'
 import CaseIntake from './components/CaseIntake'
 import CaseDossier from './components/CaseDossier'
 import CaseDashboard from './components/CaseDashboard'
-import CaseList from './components/CaseList'
-import LoginSignup from './components/LoginSignup'
-
+import Dashboard from './components/Dashboard'
+import Login from './components/Login'
+import Signup from './components/Signup'
 import LandingPage from './components/LandingPage'
 
+function ProtectedRoute({ children }) {
+  const { user, loading } = useAuth();
+  if (loading) return <div className="app-wrapper" style={{ padding: '4rem', textAlign: 'center' }}>Initializing Secure System...</div>;
+  if (!user) return <Navigate to="/login" replace />;
+  return children;
+}
+
 function App() {
-  const { user, logout, loading: authLoading } = useAuth();
-  const [view, setView] = useState(() => localStorage.getItem('le_view') || 'landing')
+  const { user, loading: authLoading } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
   const [cases, setCases] = useState([])
   const [activeCaseId, setActiveCaseId] = useState(null)
 
@@ -48,8 +57,14 @@ function App() {
         localStorage.removeItem(`le_active_id_${user.id}`);
       }
     }
-    localStorage.setItem('le_view', view);
-  }, [view, cases, activeCaseId, user]);
+  }, [cases, activeCaseId, user]);
+
+  // Redirect to dashboard after successful login/signup
+  useEffect(() => {
+    if (user && ['/login', '/signup'].includes(location.pathname)) {
+      navigate('/dashboard', { replace: true });
+    }
+  }, [user, location.pathname, navigate]);
 
   if (authLoading) return <div className="app-wrapper" style={{ padding: '4rem', textAlign: 'center' }}>Initializing Secure System...</div>;
 
@@ -66,18 +81,18 @@ function App() {
     };
     setCases([...cases, newCase]);
     setActiveCaseId(newId);
-    setView('intake');
+    navigate('/case/new');
   };
 
   const handleSelectCase = (id) => {
     setActiveCaseId(id);
     const selected = cases.find(c => c.id === id);
     if (selected.caseStatus === 'SUBMITTED') {
-      setView('dashboard');
+      navigate(`/case/${id}/manage`);
     } else if (selected.caseData) {
-      setView('case');
+      navigate(`/case/${id}`);
     } else {
-      setView('intake');
+      navigate('/case/new');
     }
   };
 
@@ -87,7 +102,6 @@ function App() {
       setCases(updated);
       if (activeCaseId === id) {
         setActiveCaseId(null);
-        setView('overview');
       }
     }
   };
@@ -105,7 +119,7 @@ function App() {
       research: res,
       caseStatus: 'DRAFT'
     });
-    setView('case');
+    navigate(`/case/${activeCaseId}`);
   };
 
   const handleMarkAsFiled = () => {
@@ -117,7 +131,7 @@ function App() {
       caseStatus: 'SUBMITTED',
       statusLogs: [initialLog]
     });
-    setView('dashboard');
+    navigate(`/case/${activeCaseId}/manage`);
   };
 
   const handleAddLog = (message) => {
@@ -128,14 +142,6 @@ function App() {
     updateActiveCase({
       statusLogs: [newLog, ...activeCase.statusLogs]
     });
-  };
-
-  const handleLandingStart = () => {
-    if (user) {
-      handleCreateNewCase();
-    } else {
-      setView('auth');
-    }
   };
 
   const renderCaseLayout = (content) => (
@@ -162,7 +168,7 @@ function App() {
         <div className="disclaimer" style={{ marginTop: 'auto' }}>
           Based on information provided by user. Not legal advice.
           <br /><br />
-          <button className="btn-secondary" style={{ width: '100%', fontSize: '0.8rem' }} onClick={() => setView('overview')}>
+          <button className="btn-secondary" style={{ width: '100%', fontSize: '0.8rem' }} onClick={() => navigate('/dashboard')}>
             Back to Overview
           </button>
         </div>
@@ -191,79 +197,80 @@ function App() {
 
   return (
     <div className="app-wrapper">
-      {view === 'landing' && (
-        <LandingPage
-          onStart={handleLandingStart}
-          onLogin={() => setView('auth')}
-          onOverview={() => setView('overview')}
-          showOverview={cases.length > 0}
-        />
-      )}
-      {view === 'auth' && (
-        <div className="auth-overlay">
-          <LoginSignup onBack={() => setView('landing')} />
-        </div>
-      )}
-      {view === 'overview' && (
-        <div style={{ background: 'white', minHeight: '100vh' }}>
-          <nav className="landing-navbar">
-            <div className="logo h2" onClick={() => setView('landing')} style={{ cursor: 'pointer' }}>LEGAL EASE</div>
-            <div className="nav-links">
-              <button className="btn-secondary" onClick={() => setView('landing')}>Home</button>
-              <button className="btn-secondary" style={{ color: '#7b2c2c' }} onClick={logout}>Sign Out</button>
-            </div>
-          </nav>
-          <div className="case-main" style={{ maxWidth: '1200px', margin: '0 auto' }}>
-            <CaseList
+      <Routes>
+        <Route path="/" element={
+          user ? <Navigate to="/dashboard" replace /> : <LandingPage />
+        } />
+        <Route path="/login" element={
+          <div className="auth-overlay"><Login /></div>
+        } />
+        <Route path="/signup" element={
+          <div className="auth-overlay"><Signup /></div>
+        } />
+        <Route path="/dashboard" element={
+          <ProtectedRoute>
+            <Dashboard
               cases={cases}
               onSelectCase={handleSelectCase}
               onNewCase={handleCreateNewCase}
               onDeleteCase={handleDeleteCase}
             />
-          </div>
-        </div>
-      )}
-      {view === 'intake' && renderCaseLayout(
-        <div className="form-dossier">
-          <div className="case-header">
-            <h3>Step 1: Incident Intake</h3>
-            <button className="btn-secondary" onClick={() => setView('overview')}>Cancel</button>
-          </div>
-          <CaseIntake onComplete={handleCompleteIntake} />
-        </div>
-      )}
-      {view === 'case' && renderCaseLayout(
-        <div className="form-dossier" style={{ maxWidth: 'none' }}>
-          <div className="case-header">
-            <h3>Step 2: Case Dossier & Correspondence</h3>
-            <div style={{ display: 'flex', gap: '1rem' }}>
-              <button className="btn-secondary" onClick={() => setView('intake')}>← Edit Intake</button>
-              <button className="btn-secondary" onClick={() => setView('overview')}>Overview</button>
-            </div>
-          </div>
-          <CaseDossier
-            plan={activeCase?.caseData}
-            info={activeCase?.formData}
-            research={activeCase?.research}
-            onSubmit={handleMarkAsFiled}
-          />
-        </div>
-      )}
-      {view === 'dashboard' && renderCaseLayout(
-        <div className="form-dossier" style={{ maxWidth: 'none' }}>
-          <div className="case-header">
-            <h3>Step 3: Post-Filing Management</h3>
-            <button className="btn-secondary" onClick={() => setView('case')}>View Dossier</button>
-          </div>
-          <CaseDashboard
-            research={activeCase?.research}
-            info={activeCase?.formData}
-            statusLogs={activeCase?.statusLogs || []}
-            onAddUpdate={handleAddLog}
-          />
-        </div>
-      )}
-      {view === 'auth' && user && setView('landing')}
+          </ProtectedRoute>
+        } />
+        <Route path="/case/new" element={
+          <ProtectedRoute>
+            {renderCaseLayout(
+              <div className="form-dossier">
+                <div className="case-header">
+                  <h3>Step 1: Incident Intake</h3>
+                  <button className="btn-secondary" onClick={() => navigate('/dashboard')}>Cancel</button>
+                </div>
+                <CaseIntake onComplete={handleCompleteIntake} />
+              </div>
+            )}
+          </ProtectedRoute>
+        } />
+        <Route path="/case/:id" element={
+          <ProtectedRoute>
+            {renderCaseLayout(
+              <div className="form-dossier" style={{ maxWidth: 'none' }}>
+                <div className="case-header">
+                  <h3>Step 2: Case Dossier & Correspondence</h3>
+                  <div style={{ display: 'flex', gap: '1rem' }}>
+                    <button className="btn-secondary" onClick={() => navigate('/case/new')}>← Edit Intake</button>
+                    <button className="btn-secondary" onClick={() => navigate('/dashboard')}>Overview</button>
+                  </div>
+                </div>
+                <CaseDossier
+                  plan={activeCase?.caseData}
+                  info={activeCase?.formData}
+                  research={activeCase?.research}
+                  onSubmit={handleMarkAsFiled}
+                />
+              </div>
+            )}
+          </ProtectedRoute>
+        } />
+        <Route path="/case/:id/manage" element={
+          <ProtectedRoute>
+            {renderCaseLayout(
+              <div className="form-dossier" style={{ maxWidth: 'none' }}>
+                <div className="case-header">
+                  <h3>Step 3: Post-Filing Management</h3>
+                  <button className="btn-secondary" onClick={() => navigate(`/case/${activeCaseId}`)}>View Dossier</button>
+                </div>
+                <CaseDashboard
+                  research={activeCase?.research}
+                  info={activeCase?.formData}
+                  statusLogs={activeCase?.statusLogs || []}
+                  onAddUpdate={handleAddLog}
+                />
+              </div>
+            )}
+          </ProtectedRoute>
+        } />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
     </div>
   )
 }

@@ -13,8 +13,10 @@
     "@fontsource/inter": "^5.2.8",
     "@fontsource/source-serif-pro": "^5.2.5",
     "@google/generative-ai": "^0.24.1",
+    "@supabase/supabase-js": "^2.96.0",
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "react-router-dom": "^7.13.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

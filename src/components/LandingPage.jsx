@@ -1,8 +1,10 @@
 import React from 'react';
+import { useNavigate } from 'react-router-dom';
 import { LANDING_CONTENT, CURRENT_MODE } from '../config/landingContent';
-import '../App.css'; // We'll append styles to App.css as planned
+import '../App.css';
 
-const LandingPage = ({ onStart, onLogin, onOverview, showOverview }) => {
+const LandingPage = () => {
+    const navigate = useNavigate();
     const content = LANDING_CONTENT[CURRENT_MODE];
 
     return (
@@ -11,7 +13,8 @@ const LandingPage = ({ onStart, onLogin, onOverview, showOverview }) => {
                 <div className="nav-container">
                     <div className="logo h2">LEGAL EASE</div>
                     <div className="nav-links">
-                        <button className="btn-secondary nav-btn" onClick={onLogin}>Sign In</button>
+                        <button className="btn-secondary nav-btn" onClick={() => navigate('/login')}>Sign In</button>
+                        <button className="btn-primary nav-btn" onClick={() => navigate('/signup')}>Sign Up</button>
                     </div>
                 </div>
             </nav>
@@ -22,10 +25,7 @@ const LandingPage = ({ onStart, onLogin, onOverview, showOverview }) => {
                     <h1>{content.hero.title}</h1>
                     <p>{content.hero.subtitle}</p>
                     <div className="hero-actions">
-                        <button className="btn-primary" onClick={onStart}>{content.hero.cta}</button>
-                        {showOverview && (
-                            <button className="btn-secondary" onClick={onOverview}>View My Claims</button>
-                        )}
+                        <button className="btn-primary" onClick={() => navigate('/signup')}>{content.hero.cta}</button>
                     </div>
                 </div>
             </header>
