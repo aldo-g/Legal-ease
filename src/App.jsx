@@ -1,73 +1,122 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useAuth } from './utils/AuthContext'
 import './App.css'
 import CaseIntake from './components/CaseIntake'
 import CaseDossier from './components/CaseDossier'
 import CaseDashboard from './components/CaseDashboard'
+import CaseList from './components/CaseList'
 import LoginSignup from './components/LoginSignup'
+
+import LandingPage from './components/LandingPage'
 
 function App() {
   const { user, logout, loading: authLoading } = useAuth();
   const [view, setView] = useState(() => localStorage.getItem('le_view') || 'landing')
-  const [caseData, setCaseData] = useState(null)
-  const [formData, setFormData] = useState(null)
-  const [research, setResearch] = useState(null)
-  const [caseStatus, setCaseStatus] = useState('DRAFT') // DRAFT, SUBMITTED
-  const [statusLogs, setStatusLogs] = useState([])
+  const [cases, setCases] = useState([])
+  const [activeCaseId, setActiveCaseId] = useState(null)
 
-  // Load user-specific data
+  // Derived state for the currently active case
+  const activeCase = useMemo(() => {
+    return cases.find(c => c.id === activeCaseId) || null
+  }, [cases, activeCaseId])
+
+  // Load user-specific cases
   useEffect(() => {
     if (user) {
-      const userKey = `le_case_${user.id}`;
-      const saved = JSON.parse(localStorage.getItem(userKey) || 'null');
-      if (saved) {
-        setCaseData(saved.caseData);
-        setFormData(saved.formData);
-        setResearch(saved.research);
-        setCaseStatus(saved.caseStatus || 'DRAFT');
-        setStatusLogs(saved.statusLogs || []);
-      } else {
-        setCaseData(null);
-        setFormData(null);
-        setResearch(null);
-        setCaseStatus('DRAFT');
-        setStatusLogs([]);
+      const userKey = `le_cases_v2_${user.id}`;
+      const saved = JSON.parse(localStorage.getItem(userKey) || '[]');
+      setCases(saved);
+
+      const lastActiveId = localStorage.getItem(`le_active_id_${user.id}`);
+      if (lastActiveId && saved.find(c => c.id === lastActiveId)) {
+        setActiveCaseId(lastActiveId);
       }
+    } else {
+      setCases([]);
+      setActiveCaseId(null);
     }
   }, [user]);
 
-  // Save user-specific data
+  // Save user-specific cases
   useEffect(() => {
     if (user) {
-      const userKey = `le_case_${user.id}`;
-      localStorage.setItem(userKey, JSON.stringify({
-        caseData,
-        formData,
-        research,
-        caseStatus,
-        statusLogs
-      }));
+      const userKey = `le_cases_v2_${user.id}`;
+      localStorage.setItem(userKey, JSON.stringify(cases));
+      if (activeCaseId) {
+        localStorage.setItem(`le_active_id_${user.id}`, activeCaseId);
+      } else {
+        localStorage.removeItem(`le_active_id_${user.id}`);
+      }
     }
     localStorage.setItem('le_view', view);
-  }, [view, caseData, formData, research, caseStatus, statusLogs, user]);
+  }, [view, cases, activeCaseId, user]);
 
   if (authLoading) return <div className="app-wrapper" style={{ padding: '4rem', textAlign: 'center' }}>Initializing Secure System...</div>;
 
-  const handleComplete = (plan, info, res) => {
-    setCaseData(plan)
-    setFormData(info)
-    setResearch(res)
-    setCaseStatus('DRAFT')
-    setView('case')
-  }
+  const handleCreateNewCase = () => {
+    const newId = `LE-${user.id.slice(-4)}-${Date.now().toString().slice(-4)}`;
+    const newCase = {
+      id: newId,
+      caseStatus: 'DRAFT',
+      caseData: null,
+      formData: null,
+      research: null,
+      statusLogs: [],
+      createdAt: new Date().toISOString()
+    };
+    setCases([...cases, newCase]);
+    setActiveCaseId(newId);
+    setView('intake');
+  };
+
+  const handleSelectCase = (id) => {
+    setActiveCaseId(id);
+    const selected = cases.find(c => c.id === id);
+    if (selected.caseStatus === 'SUBMITTED') {
+      setView('dashboard');
+    } else if (selected.caseData) {
+      setView('case');
+    } else {
+      setView('intake');
+    }
+  };
+
+  const handleDeleteCase = (id) => {
+    if (confirm("Permanently delete this case dossier? This action cannot be undone.")) {
+      const updated = cases.filter(c => c.id !== id);
+      setCases(updated);
+      if (activeCaseId === id) {
+        setActiveCaseId(null);
+        setView('overview');
+      }
+    }
+  };
+
+  const updateActiveCase = (updates) => {
+    setCases(prev => prev.map(c =>
+      c.id === activeCaseId ? { ...c, ...updates } : c
+    ));
+  };
+
+  const handleCompleteIntake = (plan, info, res) => {
+    updateActiveCase({
+      caseData: plan,
+      formData: info,
+      research: res,
+      caseStatus: 'DRAFT'
+    });
+    setView('case');
+  };
 
   const handleMarkAsFiled = () => {
-    setCaseStatus('SUBMITTED');
     const initialLog = {
       timestamp: new Date().toISOString(),
-      message: `Case formally filed under ${research.baseJustification}. Corresponding letters sent to relevant parties.`
+      message: `Case formally filed under ${activeCase.research.baseJustification}. Corresponding letters sent to relevant parties.`
     };
-    setStatusLogs([initialLog]);
+    updateActiveCase({
+      caseStatus: 'SUBMITTED',
+      statusLogs: [initialLog]
+    });
     setView('dashboard');
   };
 
@@ -76,74 +125,18 @@ function App() {
       timestamp: new Date().toISOString(),
       message
     };
-    setStatusLogs([newLog, ...statusLogs]);
+    updateActiveCase({
+      statusLogs: [newLog, ...activeCase.statusLogs]
+    });
   };
 
-  const handleReset = () => {
-    if (confirm("Reset current case dossier? This action cannot be undone.")) {
-      setCaseData(null)
-      setFormData(null)
-      setResearch(null)
-      setCaseStatus('DRAFT')
-      setStatusLogs([])
-      setView('landing')
-      if (user) localStorage.removeItem(`le_case_${user.id}`);
+  const handleLandingStart = () => {
+    if (user) {
+      handleCreateNewCase();
+    } else {
+      setView('auth');
     }
-  }
-
-  const renderLanding = () => (
-    <div className="landing-page">
-      <nav className="landing-navbar">
-        <div className="logo h2">LEGAL EASE</div>
-        <div className="nav-links">
-          {user ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-              <span className="metadata-label">Account: {user.email}</span>
-              <button className="btn-secondary" onClick={logout}>Sign Out</button>
-            </div>
-          ) : (
-            <button className="btn-primary" onClick={() => setView('auth')}>Login / Request Access</button>
-          )}
-        </div>
-      </nav>
-
-      <main className="landing-hero">
-        <h1>Structured assistance for handling consumer disruption complaints.</h1>
-        <p>A procedural system designed to identify legal obligations and generate formal correspondence under applicable frameworks.</p>
-
-        <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
-          <button className="btn-primary" onClick={() => user ? setView('intake') : setView('auth')}>
-            Begin New Case Assessment
-          </button>
-          {caseData && (
-            <button className="btn-secondary" onClick={() => setView(caseStatus === 'SUBMITTED' ? 'dashboard' : 'case')}>
-              Access Active {caseStatus === 'SUBMITTED' ? 'Dashboard' : 'Dossier'}
-            </button>
-          )}
-        </div>
-
-        <div className="disclaimer" style={{ maxWidth: '600px', margin: '4rem auto' }}>
-          <strong>Notice of Limitation:</strong> This system provides structured procedural assistance only. It does not provide legal advice, representation, or guarantees of success. Users remain responsible for the accuracy of submissions.
-        </div>
-      </main>
-
-      <section className="how-it-works">
-        <h2 style={{ marginBottom: '2rem', textAlign: 'center' }}>Procedural Workflow</h2>
-        <div className="step-card">
-          <span className="step-number">01. INTAKE</span>
-          <p>Provide a factual description of the incident. The system will categorize the event and identify potential legal frameworks.</p>
-        </div>
-        <div className="step-card">
-          <span className="step-number">02. ASSESSMENT</span>
-          <p>A structured review of eligibility and required evidence. Information is assessed against publicly available regulations.</p>
-        </div>
-        <div className="step-card">
-          <span className="step-number">03. CORRESPONDENCE</span>
-          <p>Generation of formal claim letters using factual tone and numbered legal justifications.</p>
-        </div>
-      </section>
-    </div>
-  )
+  };
 
   const renderCaseLayout = (content) => (
     <div className="case-container">
@@ -153,24 +146,24 @@ function App() {
         <div className="sidebar-heading">Case Metadata</div>
         <div className="metadata-item">
           <span className="metadata-label">Reference ID</span>
-          <span className="case-id">LE-{user?.id?.slice(-4)}-{new Date().getUTCFullYear()}</span>
+          <span className="case-id">{activeCase?.id || 'UNASSIGNED'}</span>
         </div>
         <div className="metadata-item">
           <span className="metadata-label">Framework</span>
-          <span className="metadata-value">{research?.baseJustification || 'Pending Assessment'}</span>
+          <span className="metadata-value">{activeCase?.research?.baseJustification || 'Pending Assessment'}</span>
         </div>
         <div className="metadata-item">
           <span className="metadata-label">System Status</span>
-          <span className={`status-tag ${caseStatus === 'SUBMITTED' ? 'status-active' : ''}`} style={caseStatus === 'SUBMITTED' ? { background: '#fefcbf', color: '#744210' } : {}}>
-            {caseStatus === 'SUBMITTED' ? 'Pending Fulfillment' : (caseData ? 'Draft Dossier' : 'Intake Phase')}
+          <span className={`status-tag ${activeCase?.caseStatus === 'SUBMITTED' ? 'status-active' : ''}`} style={activeCase?.caseStatus === 'SUBMITTED' ? { background: '#fefcbf', color: '#744210' } : {}}>
+            {activeCase?.caseStatus === 'SUBMITTED' ? 'Pending Fulfillment' : (activeCase?.caseData ? 'Draft Dossier' : 'Intake Phase')}
           </span>
         </div>
 
         <div className="disclaimer" style={{ marginTop: 'auto' }}>
           Based on information provided by user. Not legal advice.
           <br /><br />
-          <button className="btn-secondary" style={{ width: '100%', fontSize: '0.8rem' }} onClick={() => setView('landing')}>
-            Exit to Overview
+          <button className="btn-secondary" style={{ width: '100%', fontSize: '0.8rem' }} onClick={() => setView('overview')}>
+            Back to Overview
           </button>
         </div>
       </aside>
@@ -182,9 +175,9 @@ function App() {
       <aside className="case-references">
         <h3 style={{ fontSize: '0.9rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border-subtle)', paddingBottom: '0.5rem' }}>Regulatory References</h3>
         <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-          {research?.baseJustification ? (
+          {activeCase?.research?.baseJustification ? (
             <>
-              System has identified <strong>{research.baseJustification}</strong> as the likely applicable framework for this case.
+              System has identified <strong>{activeCase.research.baseJustification}</strong> as the likely applicable framework for this case.
               <br /><br />
               All generated correspondence will strictly adhere to the requirements of this regulation.
             </>
@@ -198,19 +191,45 @@ function App() {
 
   return (
     <div className="app-wrapper">
-      {view === 'landing' && renderLanding()}
+      {view === 'landing' && (
+        <LandingPage
+          onStart={handleLandingStart}
+          onLogin={() => setView('auth')}
+          onOverview={() => setView('overview')}
+          showOverview={cases.length > 0}
+        />
+      )}
       {view === 'auth' && (
         <div className="auth-overlay">
           <LoginSignup onBack={() => setView('landing')} />
+        </div>
+      )}
+      {view === 'overview' && (
+        <div style={{ background: 'white', minHeight: '100vh' }}>
+          <nav className="landing-navbar">
+            <div className="logo h2" onClick={() => setView('landing')} style={{ cursor: 'pointer' }}>LEGAL EASE</div>
+            <div className="nav-links">
+              <button className="btn-secondary" onClick={() => setView('landing')}>Home</button>
+              <button className="btn-secondary" style={{ color: '#7b2c2c' }} onClick={logout}>Sign Out</button>
+            </div>
+          </nav>
+          <div className="case-main" style={{ maxWidth: '1200px', margin: '0 auto' }}>
+            <CaseList
+              cases={cases}
+              onSelectCase={handleSelectCase}
+              onNewCase={handleCreateNewCase}
+              onDeleteCase={handleDeleteCase}
+            />
+          </div>
         </div>
       )}
       {view === 'intake' && renderCaseLayout(
         <div className="form-dossier">
           <div className="case-header">
             <h3>Step 1: Incident Intake</h3>
-            <button className="btn-secondary" onClick={handleReset}>Reset</button>
+            <button className="btn-secondary" onClick={() => setView('overview')}>Cancel</button>
           </div>
-          <CaseIntake onComplete={handleComplete} />
+          <CaseIntake onComplete={handleCompleteIntake} />
         </div>
       )}
       {view === 'case' && renderCaseLayout(
@@ -219,15 +238,14 @@ function App() {
             <h3>Step 2: Case Dossier & Correspondence</h3>
             <div style={{ display: 'flex', gap: '1rem' }}>
               <button className="btn-secondary" onClick={() => setView('intake')}>← Edit Intake</button>
-              <button className="btn-secondary" onClick={handleReset}>Clear Dossier</button>
+              <button className="btn-secondary" onClick={() => setView('overview')}>Overview</button>
             </div>
           </div>
           <CaseDossier
-            plan={caseData}
-            info={formData}
-            research={research}
+            plan={activeCase?.caseData}
+            info={activeCase?.formData}
+            research={activeCase?.research}
             onSubmit={handleMarkAsFiled}
-            onRestart={handleReset}
           />
         </div>
       )}
@@ -238,9 +256,9 @@ function App() {
             <button className="btn-secondary" onClick={() => setView('case')}>View Dossier</button>
           </div>
           <CaseDashboard
-            research={research}
-            info={formData}
-            statusLogs={statusLogs}
+            research={activeCase?.research}
+            info={activeCase?.formData}
+            statusLogs={activeCase?.statusLogs || []}
             onAddUpdate={handleAddLog}
           />
         </div>
