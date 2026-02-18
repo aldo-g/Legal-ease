@@ -1,6 +1,7 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from './utils/AuthContext'
+import { CaseService } from './utils/CaseService'
 import './App.css'
 import CaseIntake from './components/CaseIntake'
 import CaseDossier from './components/CaseDossier'
@@ -9,6 +10,46 @@ import Dashboard from './components/Dashboard'
 import Login from './components/Login'
 import Signup from './components/Signup'
 import LandingPage from './components/LandingPage'
+
+// Map Supabase row → app shape used by components
+function normalizeCase(row) {
+  return {
+    ...row,
+    // Keep the Supabase uuid as _id for internal use
+    _id: row.id,
+    // Components use `id` to display the case ref
+    id: row.case_ref,
+    caseStatus: mapStatusToApp(row.status),
+    caseData: Object.keys(row.case_data || {}).length > 0 ? row.case_data : null,
+    formData: Object.keys(row.form_data || {}).length > 0 ? row.form_data : null,
+    research: Object.keys(row.research || {}).length > 0 ? row.research : null,
+    complaintText: row.complaint_text || '',
+    statusLogs: [],
+    createdAt: row.created_at,
+  }
+}
+
+function mapStatusToApp(dbStatus) {
+  switch (dbStatus) {
+    case 'complaint_submitted':
+    case 'awaiting_response':
+    case 'escalated':
+      return 'SUBMITTED'
+    case 'resolved':
+    case 'closed':
+      return 'CLOSED'
+    default:
+      return 'DRAFT'
+  }
+}
+
+function mapStatusToDb(appStatus) {
+  switch (appStatus) {
+    case 'SUBMITTED': return 'complaint_submitted'
+    case 'CLOSED': return 'closed'
+    default: return 'created'
+  }
+}
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -22,42 +63,62 @@ function App() {
   const navigate = useNavigate();
   const location = useLocation();
   const [cases, setCases] = useState([])
-  const [activeCaseId, setActiveCaseId] = useState(null)
+  const [activeCaseRef, setActiveCaseRef] = useState(null)
+  const [loadingCases, setLoadingCases] = useState(false)
 
   // Derived state for the currently active case
   const activeCase = useMemo(() => {
-    return cases.find(c => c.id === activeCaseId) || null
-  }, [cases, activeCaseId])
+    return cases.find(c => c.id === activeCaseRef) || null
+  }, [cases, activeCaseRef])
 
-  // Load user-specific cases
+  // Load cases from Supabase
+  const loadCases = useCallback(async () => {
+    if (!user) return
+    setLoadingCases(true)
+    try {
+      const rows = await CaseService.fetchCases()
+      const normalized = rows.map(normalizeCase)
+
+      // Load status logs for each case
+      for (const c of normalized) {
+        try {
+          const logs = await CaseService.fetchStatusLogs(c._id)
+          c.statusLogs = logs.map(l => ({
+            timestamp: l.created_at,
+            message: l.message,
+          }))
+        } catch {
+          c.statusLogs = []
+        }
+      }
+
+      setCases(normalized)
+    } catch (err) {
+      console.error('Failed to load cases:', err)
+    } finally {
+      setLoadingCases(false)
+    }
+  }, [user])
+
   useEffect(() => {
     if (user) {
-      const userKey = `le_cases_v2_${user.id}`;
-      const saved = JSON.parse(localStorage.getItem(userKey) || '[]');
-      setCases(saved);
-
-      const lastActiveId = localStorage.getItem(`le_active_id_${user.id}`);
-      if (lastActiveId && saved.find(c => c.id === lastActiveId)) {
-        setActiveCaseId(lastActiveId);
-      }
+      loadCases()
     } else {
-      setCases([]);
-      setActiveCaseId(null);
+      setCases([])
+      setActiveCaseRef(null)
     }
-  }, [user]);
+  }, [user, loadCases])
 
-  // Save user-specific cases
+  // Sync activeCaseRef from URL when on case routes
   useEffect(() => {
-    if (user) {
-      const userKey = `le_cases_v2_${user.id}`;
-      localStorage.setItem(userKey, JSON.stringify(cases));
-      if (activeCaseId) {
-        localStorage.setItem(`le_active_id_${user.id}`, activeCaseId);
-      } else {
-        localStorage.removeItem(`le_active_id_${user.id}`);
+    const match = location.pathname.match(/^\/case\/(.+?)(?:\/manage)?$/);
+    if (match && match[1] !== 'new') {
+      const refFromUrl = decodeURIComponent(match[1]);
+      if (refFromUrl !== activeCaseRef) {
+        setActiveCaseRef(refFromUrl);
       }
     }
-  }, [cases, activeCaseId, user]);
+  }, [location.pathname, activeCaseRef]);
 
   // Redirect to dashboard after successful login/signup
   useEffect(() => {
@@ -69,79 +130,149 @@ function App() {
   if (authLoading) return <div className="app-wrapper" style={{ padding: '4rem', textAlign: 'center' }}>Initializing Secure System...</div>;
 
   const handleCreateNewCase = () => {
-    const newId = `LE-${user.id.slice(-4)}-${Date.now().toString().slice(-4)}`;
-    const newCase = {
-      id: newId,
-      caseStatus: 'DRAFT',
-      caseData: null,
-      formData: null,
-      research: null,
-      statusLogs: [],
-      createdAt: new Date().toISOString()
-    };
-    setCases([...cases, newCase]);
-    setActiveCaseId(newId);
+    setActiveCaseRef(null);
     navigate('/case/new');
   };
 
-  const handleSelectCase = (id) => {
-    setActiveCaseId(id);
-    const selected = cases.find(c => c.id === id);
-    if (selected.caseStatus === 'SUBMITTED') {
-      navigate(`/case/${id}/manage`);
-    } else if (selected.caseData) {
-      navigate(`/case/${id}`);
+  const handleSaveIntakeProgress = async (updates) => {
+    if (!activeCaseRef) {
+      // First save — create the case in Supabase
+      const caseRef = CaseService.generateCaseRef(user.id);
+      try {
+        const created = await CaseService.createCase({
+          caseRef,
+          complaintText: updates.complaintText || '',
+          research: updates.research || {},
+        });
+        const normalized = normalizeCase(created);
+        setCases(prev => [normalized, ...prev]);
+        setActiveCaseRef(caseRef);
+        // Navigate to the case's own URL
+        navigate(`/case/${caseRef}`, { replace: true });
+      } catch (err) {
+        console.error('Failed to create case:', err);
+      }
     } else {
-      navigate('/case/new');
-    }
-  };
+      // Subsequent saves — update existing case in Supabase
+      const existing = cases.find(c => c.id === activeCaseRef);
+      if (!existing) return;
+      try {
+        const dbUpdates = {};
+        if (updates.formData !== undefined) dbUpdates.formData = updates.formData;
+        if (updates.research !== undefined) dbUpdates.research = updates.research;
+        if (updates.complaintText !== undefined) dbUpdates.complaintText = updates.complaintText;
 
-  const handleDeleteCase = (id) => {
-    if (confirm("Permanently delete this case dossier? This action cannot be undone.")) {
-      const updated = cases.filter(c => c.id !== id);
-      setCases(updated);
-      if (activeCaseId === id) {
-        setActiveCaseId(null);
+        const updated = await CaseService.updateCase(existing._id, dbUpdates);
+        const normalized = normalizeCase(updated);
+        // Preserve status logs from local state
+        normalized.statusLogs = existing.statusLogs;
+        setCases(prev => prev.map(c => c.id === activeCaseRef ? normalized : c));
+      } catch (err) {
+        console.error('Failed to update case:', err);
       }
     }
   };
 
-  const updateActiveCase = (updates) => {
-    setCases(prev => prev.map(c =>
-      c.id === activeCaseId ? { ...c, ...updates } : c
-    ));
+  const handleSelectCase = (caseRef) => {
+    setActiveCaseRef(caseRef);
+    const selected = cases.find(c => c.id === caseRef);
+    if (selected.caseStatus === 'SUBMITTED') {
+      navigate(`/case/${caseRef}/manage`);
+    } else if (selected.caseData) {
+      navigate(`/case/${caseRef}`);
+    } else {
+      // Case exists but no dossier yet — go to intake view
+      navigate(`/case/${caseRef}`);
+    }
   };
 
-  const handleCompleteIntake = (plan, info, res) => {
-    updateActiveCase({
-      caseData: plan,
-      formData: info,
-      research: res,
-      caseStatus: 'DRAFT'
-    });
-    navigate(`/case/${activeCaseId}`);
+  const handleDeleteCase = async (caseRef) => {
+    if (confirm("Permanently delete this case dossier? This action cannot be undone.")) {
+      const target = cases.find(c => c.id === caseRef);
+      if (!target) return;
+      try {
+        await CaseService.deleteCase(target._id);
+        setCases(prev => prev.filter(c => c.id !== caseRef));
+        if (activeCaseRef === caseRef) {
+          setActiveCaseRef(null);
+        }
+      } catch (err) {
+        console.error('Failed to delete case:', err);
+      }
+    }
   };
 
-  const handleMarkAsFiled = () => {
-    const initialLog = {
-      timestamp: new Date().toISOString(),
-      message: `Case formally filed under ${activeCase.research.baseJustification}. Corresponding letters sent to relevant parties.`
-    };
-    updateActiveCase({
-      caseStatus: 'SUBMITTED',
-      statusLogs: [initialLog]
-    });
-    navigate(`/case/${activeCaseId}/manage`);
+  const updateActiveCase = async (updates) => {
+    if (!activeCase) return;
+    try {
+      const dbUpdates = {};
+      if (updates.caseData !== undefined) dbUpdates.caseData = updates.caseData;
+      if (updates.formData !== undefined) dbUpdates.formData = updates.formData;
+      if (updates.research !== undefined) dbUpdates.research = updates.research;
+      if (updates.caseStatus !== undefined) dbUpdates.status = mapStatusToDb(updates.caseStatus);
+
+      const updated = await CaseService.updateCase(activeCase._id, dbUpdates);
+      const normalized = normalizeCase(updated);
+      normalized.statusLogs = activeCase.statusLogs;
+      setCases(prev => prev.map(c => c.id === activeCaseRef ? normalized : c));
+    } catch (err) {
+      console.error('Failed to update case:', err);
+    }
   };
 
-  const handleAddLog = (message) => {
-    const newLog = {
-      timestamp: new Date().toISOString(),
-      message
-    };
-    updateActiveCase({
-      statusLogs: [newLog, ...activeCase.statusLogs]
-    });
+  const handleCompleteIntake = async (plan, info, res) => {
+    if (!activeCase) return;
+    try {
+      const updated = await CaseService.updateCase(activeCase._id, {
+        caseData: plan,
+        formData: info,
+        research: res,
+      });
+      const normalized = normalizeCase(updated);
+      normalized.statusLogs = activeCase.statusLogs;
+      setCases(prev => prev.map(c => c.id === activeCaseRef ? normalized : c));
+      navigate(`/case/${activeCaseRef}`);
+    } catch (err) {
+      console.error('Failed to complete intake:', err);
+    }
+  };
+
+  const handleMarkAsFiled = async () => {
+    if (!activeCase) return;
+    try {
+      const logMessage = `Case formally filed under ${activeCase.research.baseJustification}. Corresponding letters sent to relevant parties.`;
+
+      const updated = await CaseService.updateCase(activeCase._id, {
+        status: 'complaint_submitted',
+      });
+
+      await CaseService.addStatusLog(activeCase._id, logMessage);
+
+      const normalized = normalizeCase(updated);
+      normalized.statusLogs = [
+        { timestamp: new Date().toISOString(), message: logMessage },
+        ...activeCase.statusLogs,
+      ];
+      setCases(prev => prev.map(c => c.id === activeCaseRef ? normalized : c));
+      navigate(`/case/${activeCaseRef}/manage`);
+    } catch (err) {
+      console.error('Failed to mark as filed:', err);
+    }
+  };
+
+  const handleAddLog = async (message) => {
+    if (!activeCase) return;
+    try {
+      const log = await CaseService.addStatusLog(activeCase._id, message);
+      const newLog = { timestamp: log.created_at, message: log.message };
+      const updatedCase = {
+        ...activeCase,
+        statusLogs: [newLog, ...activeCase.statusLogs],
+      };
+      setCases(prev => prev.map(c => c.id === activeCaseRef ? updatedCase : c));
+    } catch (err) {
+      console.error('Failed to add log:', err);
+    }
   };
 
   const renderCaseLayout = (content) => (
@@ -225,29 +356,50 @@ function App() {
                   <h3>Step 1: Incident Intake</h3>
                   <button className="btn-secondary" onClick={() => navigate('/dashboard')}>Cancel</button>
                 </div>
-                <CaseIntake onComplete={handleCompleteIntake} />
+                <CaseIntake
+                  onComplete={handleCompleteIntake}
+                  onSaveProgress={handleSaveIntakeProgress}
+                  initialComplaint={activeCase?.complaintText || ''}
+                />
               </div>
             )}
           </ProtectedRoute>
         } />
         <Route path="/case/:id" element={
           <ProtectedRoute>
-            {renderCaseLayout(
-              <div className="form-dossier" style={{ maxWidth: 'none' }}>
-                <div className="case-header">
-                  <h3>Step 2: Case Dossier & Correspondence</h3>
-                  <div style={{ display: 'flex', gap: '1rem' }}>
-                    <button className="btn-secondary" onClick={() => navigate('/case/new')}>← Edit Intake</button>
-                    <button className="btn-secondary" onClick={() => navigate('/dashboard')}>Overview</button>
+            {activeCase?.caseData ? (
+              renderCaseLayout(
+                <div className="form-dossier" style={{ maxWidth: 'none' }}>
+                  <div className="case-header">
+                    <h3>Step 2: Case Dossier & Correspondence</h3>
+                    <div style={{ display: 'flex', gap: '1rem' }}>
+                      <button className="btn-secondary" onClick={() => navigate('/case/new')}>← Edit Intake</button>
+                      <button className="btn-secondary" onClick={() => navigate('/dashboard')}>Overview</button>
+                    </div>
                   </div>
+                  <CaseDossier
+                    plan={activeCase?.caseData}
+                    info={activeCase?.formData}
+                    research={activeCase?.research}
+                    onSubmit={handleMarkAsFiled}
+                  />
                 </div>
-                <CaseDossier
-                  plan={activeCase?.caseData}
-                  info={activeCase?.formData}
-                  research={activeCase?.research}
-                  onSubmit={handleMarkAsFiled}
-                />
-              </div>
+              )
+            ) : (
+              renderCaseLayout(
+                <div className="form-dossier" style={{ maxWidth: 'none' }}>
+                  <div className="case-header">
+                    <h3>Case Assessment</h3>
+                    <button className="btn-secondary" onClick={() => navigate('/dashboard')}>Back to Overview</button>
+                  </div>
+                  <CaseIntake
+                    onComplete={handleCompleteIntake}
+                    onSaveProgress={handleSaveIntakeProgress}
+                    initialComplaint={activeCase?.complaintText || ''}
+                    initialResearch={activeCase?.research}
+                  />
+                </div>
+              )
             )}
           </ProtectedRoute>
         } />
@@ -257,7 +409,7 @@ function App() {
               <div className="form-dossier" style={{ maxWidth: 'none' }}>
                 <div className="case-header">
                   <h3>Step 3: Post-Filing Management</h3>
-                  <button className="btn-secondary" onClick={() => navigate(`/case/${activeCaseId}`)}>View Dossier</button>
+                  <button className="btn-secondary" onClick={() => navigate(`/case/${activeCaseRef}`)}>View Dossier</button>
                 </div>
                 <CaseDashboard
                   research={activeCase?.research}

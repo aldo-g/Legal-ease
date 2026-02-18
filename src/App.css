@@ -437,6 +437,131 @@
   flex-shrink: 0;
 }
 
+/* Intake Assessment View */
+.intake-summary-card {
+  background: white;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.intake-summary-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.75rem;
+}
+
+.intake-summary-text {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.intake-findings-card {
+  background: white;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 1.5rem;
+  margin-top: 1rem;
+}
+
+.intake-findings-header {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 2rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.intake-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1.5rem;
+}
+
+.intake-form-field-full {
+  grid-column: 1 / -1;
+}
+
+/* Intake Loading Screen */
+.intake-loading-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  text-align: center;
+}
+
+.intake-loading-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.intake-loading-spinner {
+  width: 48px;
+  height: 48px;
+  border: 3px solid var(--border-subtle);
+  border-top-color: var(--accent-primary);
+  border-radius: 50%;
+  animation: intake-spin 0.8s linear infinite;
+}
+
+@keyframes intake-spin {
+  to { transform: rotate(360deg); }
+}
+
+.intake-loading-steps {
+  margin-top: 2.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  text-align: left;
+}
+
+.intake-loading-step {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  opacity: 0.4;
+  transition: opacity 0.3s ease;
+}
+
+.intake-loading-step.active {
+  opacity: 1;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.intake-loading-step.completed {
+  opacity: 0.7;
+}
+
+.intake-step-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border-strong);
+  flex-shrink: 0;
+}
+
+.intake-loading-step.active .intake-step-dot {
+  background: var(--accent-primary);
+  box-shadow: 0 0 0 3px rgba(44, 62, 80, 0.15);
+}
+
+.intake-loading-step.completed .intake-step-dot {
+  background: var(--accent-primary);
+}
+
 @media (max-width: 768px) {
   .dashboard-stats {
     grid-template-columns: 1fr;
