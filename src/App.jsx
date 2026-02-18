@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
 import { useAuth } from './utils/AuthContext'
 import { CaseService } from './utils/CaseService'
+import { AgentService } from './utils/AgentService'
 import './App.css'
 import CaseIntake from './components/CaseIntake'
 import CaseDossier from './components/CaseDossier'
@@ -240,10 +241,19 @@ function App() {
   const handleMarkAsFiled = async () => {
     if (!activeCase) return;
     try {
-      const logMessage = `Case formally filed under ${activeCase.research.baseJustification}. Corresponding letters sent to relevant parties.`;
+      const logMessage = `Case formally filed under ${activeCase.research.baseJustification}. Corresponding letters sent to relevant parties. Response deadline set for 14 days.`;
+
+      // Set response deadline to 14 days from now
+      const deadline = new Date();
+      deadline.setDate(deadline.getDate() + 14);
 
       const updated = await CaseService.updateCase(activeCase._id, {
         status: 'complaint_submitted',
+        caseData: {
+          ...activeCase.caseData,
+          responseDeadline: deadline.toISOString(),
+          escalationHistory: [],
+        },
       });
 
       await CaseService.addStatusLog(activeCase._id, logMessage);
@@ -262,16 +272,61 @@ function App() {
 
   const handleAddLog = async (message) => {
     if (!activeCase) return;
+
+    // Save the user's update immediately
+    const log = await CaseService.addStatusLog(activeCase._id, message);
+    const userLog = { timestamp: log.created_at, message: log.message };
+
+    const updatedLogs = [userLog, ...activeCase.statusLogs];
+    setCases(prev => prev.map(c =>
+      c.id === activeCaseRef ? { ...c, statusLogs: updatedLogs } : c
+    ));
+
+    // Send to agent for analysis
     try {
-      const log = await CaseService.addStatusLog(activeCase._id, message);
-      const newLog = { timestamp: log.created_at, message: log.message };
-      const updatedCase = {
-        ...activeCase,
-        statusLogs: [newLog, ...activeCase.statusLogs],
-      };
-      setCases(prev => prev.map(c => c.id === activeCaseRef ? updatedCase : c));
+      const analysis = await AgentService.analyzeUpdate(
+        message,
+        activeCase.research,
+        activeCase.statusLogs
+      );
+
+      // Save the agent's analysis as a log entry
+      const agentMessage = `[Agent Analysis] ${analysis.assessment} Recommended: ${analysis.nextAction}`;
+      const agentLog = await CaseService.addStatusLog(activeCase._id, agentMessage);
+      const agentLogEntry = { timestamp: agentLog.created_at, message: agentLog.message, isAgent: true };
+
+      // Update deadline if the agent suggests one
+      let updatedCaseData = { ...activeCase.caseData };
+      if (analysis.newDeadlineDays) {
+        const newDeadline = new Date();
+        newDeadline.setDate(newDeadline.getDate() + analysis.newDeadlineDays);
+        updatedCaseData.responseDeadline = newDeadline.toISOString();
+      }
+
+      // Store escalation draft if recommended
+      if (analysis.shouldEscalate && analysis.escalationDraft) {
+        updatedCaseData.escalationHistory = [
+          ...(updatedCaseData.escalationHistory || []),
+          {
+            triggeredAt: new Date().toISOString(),
+            draft: analysis.escalationDraft,
+            responseQuality: analysis.responseQuality,
+          }
+        ];
+      }
+
+      // Persist updated case data
+      const updatedCase = await CaseService.updateCase(activeCase._id, {
+        caseData: updatedCaseData,
+      });
+      const normalized = normalizeCase(updatedCase);
+      normalized.statusLogs = [agentLogEntry, userLog, ...activeCase.statusLogs];
+      setCases(prev => prev.map(c => c.id === activeCaseRef ? normalized : c));
+
+      return analysis;
     } catch (err) {
-      console.error('Failed to add log:', err);
+      console.error('Agent analysis failed:', err);
+      return null;
     }
   };
 
@@ -393,6 +448,7 @@ function App() {
                     <button className="btn-secondary" onClick={() => navigate('/dashboard')}>Back to Overview</button>
                   </div>
                   <CaseIntake
+                    key={activeCase?._id || 'new'}
                     onComplete={handleCompleteIntake}
                     onSaveProgress={handleSaveIntakeProgress}
                     initialComplaint={activeCase?.complaintText || ''}
@@ -414,6 +470,7 @@ function App() {
                 <CaseDashboard
                   research={activeCase?.research}
                   info={activeCase?.formData}
+                  caseData={activeCase?.caseData}
                   statusLogs={activeCase?.statusLogs || []}
                   onAddUpdate={handleAddLog}
                 />

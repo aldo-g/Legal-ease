@@ -55,33 +55,58 @@ const CaseIntake = ({ onComplete, onSaveProgress, initialComplaint, initialResea
         }
     };
 
-    // Full-screen loading during research + save
-    if (status === 'researching' || status === 'saving') {
+    // Full-screen loading states
+    if (status === 'researching' || status === 'saving' || status === 'generating') {
+        const loadingConfig = {
+            researching: {
+                title: 'Analyzing Incident',
+                description: 'Cross-referencing incident details with applicable regulatory frameworks...',
+                steps: [
+                    { label: 'Incident received', state: 'completed' },
+                    { label: 'Regulatory analysis', state: 'active' },
+                    { label: 'Creating case record', state: 'pending' },
+                ],
+            },
+            saving: {
+                title: 'Creating Case File',
+                description: 'Saving case data and generating reference ID...',
+                steps: [
+                    { label: 'Incident received', state: 'completed' },
+                    { label: 'Regulatory analysis', state: 'completed' },
+                    { label: 'Creating case record', state: 'active' },
+                ],
+            },
+            generating: {
+                title: 'Generating Case Dossier',
+                description: 'Building procedural strategy and drafting formal correspondence...',
+                steps: [
+                    { label: 'Evidence compiled', state: 'completed' },
+                    { label: 'Procedural strategy', state: 'active' },
+                    { label: 'Drafting correspondence', state: 'pending' },
+                    { label: 'Finalizing dossier', state: 'pending' },
+                ],
+            },
+        };
+
+        const config = loadingConfig[status];
+
         return (
             <div className="intake-loading-screen">
                 <div className="intake-loading-content">
                     <div className="intake-loading-spinner" />
                     <h3 style={{ marginTop: '2rem', marginBottom: '0.75rem' }}>
-                        {status === 'researching' ? 'Analyzing Incident' : 'Creating Case File'}
+                        {config.title}
                     </h3>
                     <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', maxWidth: '400px', lineHeight: '1.6' }}>
-                        {status === 'researching'
-                            ? 'Cross-referencing incident details with applicable regulatory frameworks...'
-                            : 'Saving case data and generating reference ID...'}
+                        {config.description}
                     </p>
                     <div className="intake-loading-steps">
-                        <div className={`intake-loading-step ${status === 'researching' || status === 'saving' ? 'completed' : ''}`}>
-                            <span className="intake-step-dot" />
-                            <span>Incident received</span>
-                        </div>
-                        <div className={`intake-loading-step ${status === 'researching' ? 'active' : 'completed'}`}>
-                            <span className="intake-step-dot" />
-                            <span>Regulatory analysis</span>
-                        </div>
-                        <div className={`intake-loading-step ${status === 'saving' ? 'active' : ''}`}>
-                            <span className="intake-step-dot" />
-                            <span>Creating case record</span>
-                        </div>
+                        {config.steps.map((step, i) => (
+                            <div key={i} className={`intake-loading-step ${step.state}`}>
+                                <span className="intake-step-dot" />
+                                <span>{step.label}</span>
+                            </div>
+                        ))}
                     </div>
                 </div>
             </div>
@@ -120,6 +145,29 @@ const CaseIntake = ({ onComplete, onSaveProgress, initialComplaint, initialResea
                         </p>
                     </div>
                 </section>
+
+                {/* Potential compensation areas */}
+                {researchResult.compensationAreas && researchResult.compensationAreas.length > 0 && (
+                    <section className="dossier-step" style={{ marginTop: '0.5rem' }}>
+                        <h3>Potential Compensation</h3>
+                        <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
+                            Based on the applicable regulatory framework, the following areas of remedy may be available.
+                        </p>
+                        <div className="compensation-grid">
+                            {researchResult.compensationAreas.map((area, idx) => (
+                                <div key={idx} className="compensation-card">
+                                    <div className="compensation-card-header">
+                                        <span className="compensation-title">{area.title}</span>
+                                        {area.estimate && (
+                                            <span className="compensation-estimate">{area.estimate}</span>
+                                        )}
+                                    </div>
+                                    <p className="compensation-description">{area.description}</p>
+                                </div>
+                            ))}
+                        </div>
+                    </section>
+                )}
 
                 {/* Required information form */}
                 <section className="dossier-step" style={{ marginTop: '0.5rem' }}>

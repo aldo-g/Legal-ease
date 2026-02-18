@@ -1,7 +1,44 @@
-import React from 'react';
+import { useState } from 'react';
 
-const CaseDossier = ({ plan, info, research, onSubmit, onRestart }) => {
+const CaseDossier = ({ plan, info, research, onSubmit }) => {
+    const [copied, setCopied] = useState(false);
+    const [activeTab, setActiveTab] = useState('timeline');
+
     if (!plan) return null;
+
+    // Support both old format (plan.email as string) and new format (plan.email as object)
+    const email = typeof plan.email === 'string'
+        ? { subject: '', recipientName: '', recipientEmail: '', body: plan.email }
+        : plan.email;
+
+    // Support both old format (plan.strategy as string) and new format (plan.timeline as array)
+    const timeline = plan.timeline || [];
+    const hasTimeline = timeline.length > 0;
+
+    const handleCopyEmail = async () => {
+        try {
+            await navigator.clipboard.writeText(email.body);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        } catch {
+            // Fallback
+            const textarea = document.createElement('textarea');
+            textarea.value = email.body;
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textarea);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 2000);
+        }
+    };
+
+    const handleOpenMailClient = () => {
+        const subject = encodeURIComponent(email.subject);
+        const body = encodeURIComponent(email.body);
+        const to = email.recipientEmail || '';
+        window.open(`mailto:${to}?subject=${subject}&body=${body}`, '_self');
+    };
 
     const handlePrint = () => {
         window.print();
@@ -15,93 +52,163 @@ const CaseDossier = ({ plan, info, research, onSubmit, onRestart }) => {
 
     return (
         <div className="case-dossier-view">
-            {/* 01. Assessment Summary */}
-            <section className="dossier-step">
-                <h3 style={{ borderBottom: '2px solid var(--accent-primary)', paddingBottom: '0.5rem' }}>03. Assessment Summary</h3>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem', marginTop: '1.5rem' }}>
-                    <div>
-                        <div className="sidebar-heading">Identified Framework</div>
-                        <p style={{ fontWeight: 600 }}>{research.baseJustification}</p>
-                    </div>
-                    <div>
-                        <div className="sidebar-heading">Case Status</div>
-                        <p className="status-tag status-active">Ready for Submission</p>
-                    </div>
-                </div>
-                <p style={{ marginTop: '1.5rem', lineHeight: '1.6', fontSize: '1rem', color: 'var(--text-secondary)' }}>
-                    {research.summary}
-                </p>
-            </section>
+            {/* Tab navigation */}
+            <div className="dossier-tabs">
+                <button
+                    className={`dossier-tab ${activeTab === 'timeline' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('timeline')}
+                >
+                    Action Plan
+                </button>
+                <button
+                    className={`dossier-tab ${activeTab === 'email' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('email')}
+                >
+                    Correspondence
+                </button>
+                <button
+                    className={`dossier-tab ${activeTab === 'evidence' ? 'active' : ''}`}
+                    onClick={() => setActiveTab('evidence')}
+                >
+                    Evidence
+                </button>
+            </div>
 
-            {/* 02. Procedural Strategy */}
-            <section className="dossier-step" style={{ marginTop: '3rem' }}>
-                <h3>04. Recommended Procedural Framework</h3>
-                <div style={{ background: '#f8f9fa', padding: '1.5rem', border: '1px solid var(--border-subtle)', marginTop: '1.5rem' }}>
-                    <div className="sidebar-heading">Strategy Guidelines</div>
-                    <p style={{ whiteSpace: 'pre-line', lineHeight: '1.7', fontSize: '0.95rem' }}>
-                        {plan.strategy}
+            {/* Timeline Tab */}
+            {activeTab === 'timeline' && (
+                <div className="dossier-tab-content">
+                    {/* Summary bar */}
+                    <div className="dossier-summary-bar">
+                        <div>
+                            <div className="sidebar-heading" style={{ margin: 0 }}>Framework</div>
+                            <p style={{ fontWeight: 600, fontSize: '0.9rem', marginTop: '0.25rem' }}>{research.baseJustification}</p>
+                        </div>
+                        <div>
+                            <div className="sidebar-heading" style={{ margin: 0 }}>Status</div>
+                            <span className="status-tag status-active" style={{ marginTop: '0.25rem', display: 'inline-block' }}>Ready for Action</span>
+                        </div>
+                    </div>
+
+                    {hasTimeline ? (
+                        <div className="action-timeline">
+                            {timeline.map((step, idx) => (
+                                <div key={idx} className="timeline-step">
+                                    <div className="timeline-step-marker">
+                                        <span className="timeline-step-number">{idx + 1}</span>
+                                        {idx < timeline.length - 1 && <div className="timeline-step-line" />}
+                                    </div>
+                                    <div className="timeline-step-content">
+                                        <div className="timeline-step-header">
+                                            <h4 className="timeline-step-title">{step.title}</h4>
+                                            <span className="timeline-step-timeframe">{step.timeframe}</span>
+                                        </div>
+                                        <p className="timeline-step-description">{step.description}</p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    ) : (
+                        /* Fallback for old data format */
+                        <div style={{ background: '#f8f9fa', padding: '1.5rem', border: '1px solid var(--border-subtle)', borderRadius: '6px' }}>
+                            <div className="sidebar-heading">Strategy</div>
+                            <p style={{ whiteSpace: 'pre-line', lineHeight: '1.7', fontSize: '0.95rem' }}>
+                                {plan.strategy}
+                            </p>
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Email Tab */}
+            {activeTab === 'email' && (
+                <div className="dossier-tab-content">
+                    {/* Email metadata */}
+                    {(email.recipientName || email.recipientEmail) && (
+                        <div className="email-metadata">
+                            <div className="email-meta-row">
+                                <span className="email-meta-label">To:</span>
+                                <span className="email-meta-value">
+                                    {email.recipientName}
+                                    {email.recipientEmail && (
+                                        <span style={{ color: 'var(--text-secondary)', marginLeft: '0.5rem' }}>
+                                            &lt;{email.recipientEmail}&gt;
+                                        </span>
+                                    )}
+                                </span>
+                            </div>
+                            {email.subject && (
+                                <div className="email-meta-row">
+                                    <span className="email-meta-label">Subject:</span>
+                                    <span className="email-meta-value">{email.subject}</span>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* Email body */}
+                    <div className="email-document">
+                        <div style={{ whiteSpace: 'pre-line', lineHeight: '1.8', fontSize: '0.95rem' }}>
+                            {email.body}
+                        </div>
+                    </div>
+
+                    {/* Email actions */}
+                    <div className="email-actions">
+                        <button className="btn-primary email-action-btn" onClick={handleOpenMailClient}>
+                            Open in Email Client
+                        </button>
+                        <button className="btn-secondary email-action-btn" onClick={handleCopyEmail}>
+                            {copied ? 'Copied!' : 'Copy to Clipboard'}
+                        </button>
+                        <button className="btn-secondary email-action-btn" onClick={handlePrint}>
+                            Print / Save PDF
+                        </button>
+                    </div>
+
+                    <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '1rem', lineHeight: '1.5' }}>
+                        Review the correspondence carefully before sending. Replace any placeholders marked with [BRACKETS] with your actual information.
                     </p>
                 </div>
-            </section>
+            )}
 
-            {/* 03. Formal Correspondence */}
-            <section className="dossier-step" style={{ marginTop: '3rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '2px solid var(--accent-primary)', paddingBottom: '0.5rem' }}>
-                    <h3>05. Formal Correspondence Draft</h3>
-                    <button className="btn-secondary" onClick={handlePrint} style={{ fontSize: '0.8rem' }}>Print to PDF</button>
-                </div>
-
-                <div className="correspondence-document" style={{
-                    background: 'white',
-                    border: '1px solid var(--border-strong)',
-                    padding: '4rem',
-                    marginTop: '1.5rem',
-                    fontFamily: "'Inter', sans-serif",
-                    boxShadow: '0 4px 6px rgba(0,0,0,0.02)'
-                }}>
-                    <div style={{ whiteSpace: 'pre-line', lineHeight: '1.8', fontSize: '1rem' }}>
-                        {plan.email}
+            {/* Evidence Tab */}
+            {activeTab === 'evidence' && (
+                <div className="dossier-tab-content">
+                    <p style={{ fontSize: '0.875rem', color: 'var(--text-secondary)', marginBottom: '1.5rem' }}>
+                        Gather the following documentation to support your claim. Check off items as you collect them.
+                    </p>
+                    <div className="evidence-list">
+                        {plan.checklist.map((item, idx) => (
+                            <label key={idx} className="evidence-item">
+                                <input type="checkbox" className="evidence-checkbox" />
+                                <span className="evidence-text">{item}</span>
+                            </label>
+                        ))}
                     </div>
                 </div>
-            </section>
+            )}
 
-            {/* 04. Evidence Checklist */}
-            <section className="dossier-step" style={{ marginTop: '3rem' }}>
-                <h3>06. Required Evidentiary Documentation</h3>
-                <ul style={{ listStyle: 'none', marginTop: '1rem' }}>
-                    {plan.checklist.map((item, idx) => (
-                        <li key={idx} style={{
-                            padding: '1rem',
-                            borderBottom: '1px solid var(--border-subtle)',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '1rem',
-                            fontSize: '0.95rem'
-                        }}>
-                            <input type="checkbox" style={{ width: 'auto' }} />
-                            {item}
-                        </li>
-                    ))}
-                </ul>
-            </section>
-
-            {/* 05. Submission Confirmation */}
-            <section className="dossier-step" style={{ marginTop: '4rem', paddingBottom: '6rem', borderTop: '2px solid var(--accent-primary)', paddingTop: '2rem' }}>
-                <h3>07. Procedural Filing Confirmation</h3>
-                <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '1.5rem', lineHeight: '1.6' }}>
-                    Once you have formally sent the correspondence above and gathered the required evidence, acknowledge the filing below to transition the case to active monitoring.
-                </p>
-                <button className="btn-primary" onClick={handleFinalSubmit} style={{ width: '100%', padding: '1rem' }}>
-                    Finalize & Mark as Filed
-                </button>
-            </section>
+            {/* Filing confirmation — always visible */}
+            <div className="dossier-filing-section">
+                <div className="dossier-filing-inner">
+                    <div>
+                        <h4 style={{ marginBottom: '0.25rem' }}>Ready to file?</h4>
+                        <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>
+                            Once you have sent the correspondence and gathered your evidence, mark this case as filed to begin tracking.
+                        </p>
+                    </div>
+                    <button className="btn-primary" onClick={handleFinalSubmit} style={{ whiteSpace: 'nowrap', padding: '0.75rem 2rem' }}>
+                        Mark as Filed
+                    </button>
+                </div>
+            </div>
 
             <style dangerouslySetInnerHTML={{
                 __html: `
         @media print {
-          .case-sidebar, .case-references, .btn-secondary, h3, .sidebar-heading, .status-tag { display: none !important; }
+          .case-sidebar, .case-references, .dossier-tabs, .email-actions, .dossier-filing-section, .btn-secondary { display: none !important; }
           .case-main { padding: 0 !important; }
-          .correspondence-document { border: none !important; padding: 0 !important; box-shadow: none !important; }
+          .email-document { border: none !important; padding: 0 !important; box-shadow: none !important; }
           .app-wrapper { background: white !important; }
         }
       `}} />

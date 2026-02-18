@@ -26,6 +26,7 @@ export const AgentService = {
       2. Identify the specific regulatory framework applies (e.g. EU 261/2004, UK Consumer Rights Act 2015). Use serious, technical names.
       3. Summarize the applicable legal framework in a sober, objective tone. Avoid "You have rights" - use "The regulation specifies obligations for..."
       4. Identify the specific data points required to build a formal case dossier.
+      5. Identify potential areas of compensation or remedies available under the applicable regulation. For each area, provide a short title, a one-sentence description of the entitlement, and an estimated value range where possible (e.g. "€250 – €600" or "Reasonable costs"). Use factual, objective language.
 
       Return ONLY a JSON object in the following format:
       {
@@ -34,6 +35,9 @@ export const AgentService = {
         "summary": "Objective description of relevant regulatory clauses.",
         "requiredInfo": [
           { "id": "unique_id", "label": "Technical Label (e.g. Flight Reference)", "placeholder": "Example", "type": "text|date|number|textarea" }
+        ],
+        "compensationAreas": [
+          { "title": "Short title", "description": "One-sentence explanation of entitlement.", "estimate": "Value range or null if not quantifiable" }
         ]
       }
     `;
@@ -61,19 +65,25 @@ export const AgentService = {
       Validated User Data: ${JSON.stringify(info)}
 
       Generate:
-      1. A procedural strategy (Formal tone, fact-based, no cleverness). Use numbered steps.
-      2. A formal claim correspondence draft. 
-         - Use a factual, restrained tone.
-         - Subject line: "Formal claim under [Regulation] – [Identifier]"
-         - No greetings like "Hope you are well".
-         - Numbered paragraphs for facts.
-         - Explicitly cite ${research.baseJustification}.
-      3. A list of required evidentiary items.
+      1. An ordered timeline of action steps the user should take to pursue their claim. Each step should have a title, description, and a suggested timeframe (e.g. "Immediately", "Within 7 days", "After 14 days"). Steps should be in chronological order. Include 4-7 steps covering: initial correspondence, waiting period, follow-up, escalation options.
+      2. A formal claim email ready to send:
+         - A suggested subject line: "Formal claim under [Regulation] – [Identifier]"
+         - The name of the company/organisation to send it to (based on the incident)
+         - A suggested recipient email address or department (e.g. "customer.relations@airline.com" or "Customer Relations Department"). If unsure, use a realistic placeholder.
+         - The full email body text. Use a factual, restrained tone. No greetings like "Hope you are well". Numbered paragraphs for facts. Explicitly cite ${research.baseJustification}. Include placeholders in square brackets for anything the user needs to fill in, like [YOUR FULL NAME] or [YOUR ADDRESS].
+      3. A list of required evidentiary items the user should gather.
 
       Return ONLY a JSON object in the following format:
       {
-        "strategy": "The procedural steps",
-        "email": "The formal correspondence text",
+        "timeline": [
+          { "title": "Step title", "description": "What to do and why.", "timeframe": "When to do it" }
+        ],
+        "email": {
+          "subject": "The email subject line",
+          "recipientName": "Company or department name",
+          "recipientEmail": "email@example.com",
+          "body": "The full email body text"
+        },
         "checklist": ["Evidence Item 1", "Evidence Item 2"]
       }
     `;
@@ -87,6 +97,55 @@ export const AgentService = {
       return JSON.parse(text.substring(jsonStart, jsonEnd));
     } catch (error) {
       console.error("Dossier Generation Error:", error);
+      throw error;
+    }
+  },
+
+  analyzeUpdate: async (update, research, previousLogs) => {
+    const model = AgentService._getAI();
+
+    const logSummary = previousLogs
+      .slice(0, 10)
+      .map(l => `[${l.timestamp}] ${l.message}`)
+      .join('\n');
+
+    const prompt = `
+      You are a Case Tracking Agent for a consumer rights enforcement platform.
+
+      Case context:
+      - Applicable regulation: ${research.baseJustification}
+      - Previous case log:\n${logSummary}
+
+      The user has logged a new update: "${update}"
+
+      Analyze this update and provide:
+      1. A brief assessment of what this means for the case (1-2 sentences).
+      2. A specific recommended next action the user should take.
+      3. If the other party has responded, whether the response is satisfactory, partial, or inadequate.
+      4. Whether the case should be escalated (e.g. to a regulator, ombudsman, or small claims court).
+      5. A suggested new deadline in days from now for the next action (e.g. 7, 14, 30).
+      6. If escalation is recommended, draft a brief escalation letter/email body.
+
+      Return ONLY a JSON object:
+      {
+        "assessment": "Brief assessment of the update.",
+        "nextAction": "Specific recommended next action.",
+        "responseQuality": "satisfactory|partial|inadequate|not_applicable",
+        "shouldEscalate": true/false,
+        "newDeadlineDays": 14,
+        "escalationDraft": "Escalation letter text or null if not escalating"
+      }
+    `;
+
+    try {
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      const text = response.text();
+      const jsonStart = text.indexOf('{');
+      const jsonEnd = text.lastIndexOf('}') + 1;
+      return JSON.parse(text.substring(jsonStart, jsonEnd));
+    } catch (error) {
+      console.error("Update Analysis Error:", error);
       throw error;
     }
   }
