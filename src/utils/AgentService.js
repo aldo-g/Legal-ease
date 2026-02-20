@@ -27,15 +27,19 @@ export const AgentService = {
       3. Summarize the applicable legal framework in a sober, objective tone. Avoid "You have rights" - use "The regulation specifies obligations for..."
       4. Identify the specific data points required to build a formal case dossier.
       5. Identify potential areas of compensation or remedies available under the applicable regulation. For each area, provide a short title, a one-sentence description of the entitlement, and an estimated value range where possible (e.g. "€250 – €600" or "Reasonable costs"). Use factual, objective language.
+      6. For each field in requiredInfo, extract the value from the user's complaint text if it can be determined. Put these in "suggestedValues" as a flat object keyed by the field id. Only include fields where you are reasonably confident of the value. Use null for fields you cannot determine.
+      7. Generate a short case title (5-8 words max) suitable for display in a case list. Format: "Company — Incident Type" or "Carrier Name Flight Delay" etc.
 
       Return ONLY a JSON object in the following format:
       {
         "type": "STRING_UPPERCASE",
         "baseJustification": "Official Name of Regulation",
         "summary": "Objective description of relevant regulatory clauses.",
+        "title": "Short case title",
         "requiredInfo": [
           { "id": "unique_id", "label": "Technical Label (e.g. Flight Reference)", "placeholder": "Example", "type": "text|date|number|textarea" }
         ],
+        "suggestedValues": { "field_id": "extracted value or null" },
         "compensationAreas": [
           { "title": "Short title", "description": "One-sentence explanation of entitlement.", "estimate": "Value range or null if not quantifiable" }
         ]

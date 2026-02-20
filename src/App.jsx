@@ -12,6 +12,34 @@ import Login from './components/Login'
 import Signup from './components/Signup'
 import LandingPage from './components/LandingPage'
 
+// Derive a human-readable title from available case data
+function deriveCaseTitle(row) {
+  // Prefer an explicitly stored title
+  if (row.case_data?.title) return row.case_data.title
+
+  // Build from research type + complaint text
+  const research = row.research || {}
+  const type = research.type || ''
+  const complaint = row.complaint_text || ''
+
+  // Extract a company name heuristic: first capitalised word after "with", "against", "from", "by"
+  const companyMatch = complaint.match(/\b(?:with|against|from|by|airline|carrier)\s+([A-Z][A-Za-z\s&]{1,30}?)(?:\s*[,.]|\s+(?:from|to|on|at|for)\b)/i)
+  const company = companyMatch ? companyMatch[1].trim() : null
+
+  // Extract a date heuristic
+  const dateMatch = complaint.match(/\b(\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}|\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+\d{4})\b/i)
+  const date = dateMatch ? dateMatch[1] : null
+
+  const typeLabel = type
+    ? type.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+    : 'Consumer Dispute'
+
+  if (company && date) return `${company} — ${date}`
+  if (company) return `${company} claim`
+  if (date) return `${typeLabel} — ${date}`
+  return typeLabel
+}
+
 // Map Supabase row → app shape used by components
 function normalizeCase(row) {
   return {
@@ -20,6 +48,7 @@ function normalizeCase(row) {
     _id: row.id,
     // Components use `id` to display the case ref
     id: row.case_ref,
+    title: deriveCaseTitle(row),
     caseStatus: mapStatusToApp(row.status),
     caseData: Object.keys(row.case_data || {}).length > 0 ? row.case_data : null,
     formData: Object.keys(row.form_data || {}).length > 0 ? row.form_data : null,
@@ -44,13 +73,6 @@ function mapStatusToApp(dbStatus) {
   }
 }
 
-function mapStatusToDb(appStatus) {
-  switch (appStatus) {
-    case 'SUBMITTED': return 'complaint_submitted'
-    case 'CLOSED': return 'closed'
-    default: return 'created'
-  }
-}
 
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
@@ -65,7 +87,7 @@ function App() {
   const location = useLocation();
   const [cases, setCases] = useState([])
   const [activeCaseRef, setActiveCaseRef] = useState(null)
-  const [loadingCases, setLoadingCases] = useState(false)
+  const [, setLoadingCases] = useState(false)
 
   // Derived state for the currently active case
   const activeCase = useMemo(() => {
@@ -203,24 +225,6 @@ function App() {
     }
   };
 
-  const updateActiveCase = async (updates) => {
-    if (!activeCase) return;
-    try {
-      const dbUpdates = {};
-      if (updates.caseData !== undefined) dbUpdates.caseData = updates.caseData;
-      if (updates.formData !== undefined) dbUpdates.formData = updates.formData;
-      if (updates.research !== undefined) dbUpdates.research = updates.research;
-      if (updates.caseStatus !== undefined) dbUpdates.status = mapStatusToDb(updates.caseStatus);
-
-      const updated = await CaseService.updateCase(activeCase._id, dbUpdates);
-      const normalized = normalizeCase(updated);
-      normalized.statusLogs = activeCase.statusLogs;
-      setCases(prev => prev.map(c => c.id === activeCaseRef ? normalized : c));
-    } catch (err) {
-      console.error('Failed to update case:', err);
-    }
-  };
-
   const handleCompleteIntake = async (plan, info, res) => {
     if (!activeCase) return;
     try {
@@ -330,8 +334,10 @@ function App() {
     }
   };
 
-  const renderCaseLayout = (content) => (
-    <div className="case-container">
+  // Full 3-column layout for dossier/manage views
+  // noRefs: true hides the right regulatory references sidebar
+  const renderCaseLayout = (content, { noRefs = false } = {}) => (
+    <div className={`case-container${noRefs ? ' case-container--no-refs' : ''}`}>
       <aside className="case-sidebar">
         <h2 style={{ fontSize: '1.2rem', marginBottom: '2rem' }}>Case Management</h2>
 
@@ -381,6 +387,41 @@ function App() {
     </div>
   )
 
+  // Slim 2-column layout for intake (no right sidebar)
+  const renderIntakeLayout = (content) => (
+    <div className="case-container intake-layout">
+      <aside className="case-sidebar">
+        <h2 style={{ fontSize: '1.2rem', marginBottom: '2rem' }}>Case Management</h2>
+
+        <div className="sidebar-heading">Case Metadata</div>
+        <div className="metadata-item">
+          <span className="metadata-label">Reference ID</span>
+          <span className="case-id">{activeCase?.id || 'UNASSIGNED'}</span>
+        </div>
+        <div className="metadata-item">
+          <span className="metadata-label">Framework</span>
+          <span className="metadata-value">{activeCase?.research?.baseJustification || 'Pending Assessment'}</span>
+        </div>
+        <div className="metadata-item">
+          <span className="metadata-label">System Status</span>
+          <span className="status-tag">Intake Phase</span>
+        </div>
+
+        <div className="disclaimer" style={{ marginTop: 'auto' }}>
+          Not legal advice. Based on information provided by user.
+          <br /><br />
+          <button className="btn-secondary" style={{ width: '100%', fontSize: '0.8rem' }} onClick={() => navigate('/dashboard')}>
+            Back to Overview
+          </button>
+        </div>
+      </aside>
+
+      <main className="case-main" style={{ gridColumn: '2 / -1' }}>
+        {content}
+      </main>
+    </div>
+  )
+
   return (
     <div className="app-wrapper">
       <Routes>
@@ -405,12 +446,8 @@ function App() {
         } />
         <Route path="/case/new" element={
           <ProtectedRoute>
-            {renderCaseLayout(
+            {renderIntakeLayout(
               <div className="form-dossier">
-                <div className="case-header">
-                  <h3>Step 1: Incident Intake</h3>
-                  <button className="btn-secondary" onClick={() => navigate('/dashboard')}>Cancel</button>
-                </div>
                 <CaseIntake
                   onComplete={handleCompleteIntake}
                   onSaveProgress={handleSaveIntakeProgress}
@@ -438,15 +475,12 @@ function App() {
                     research={activeCase?.research}
                     onSubmit={handleMarkAsFiled}
                   />
-                </div>
+                </div>,
+                { noRefs: true }
               )
             ) : (
-              renderCaseLayout(
+              renderIntakeLayout(
                 <div className="form-dossier" style={{ maxWidth: 'none' }}>
-                  <div className="case-header">
-                    <h3>Case Assessment</h3>
-                    <button className="btn-secondary" onClick={() => navigate('/dashboard')}>Back to Overview</button>
-                  </div>
                   <CaseIntake
                     key={activeCase?._id || 'new'}
                     onComplete={handleCompleteIntake}

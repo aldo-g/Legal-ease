@@ -1,5 +1,10 @@
 import React from 'react';
 
+const formatDate = (iso) => {
+    if (!iso) return null;
+    return new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+};
+
 const CaseList = ({ cases, onSelectCase, onNewCase, onDeleteCase }) => {
     return (
         <div className="case-list-view">
@@ -21,22 +26,31 @@ const CaseList = ({ cases, onSelectCase, onNewCase, onDeleteCase }) => {
                 ) : (
                     <div className="case-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '1.5rem' }}>
                         {cases.map((c) => (
-                            <div key={c.id} className="step-card" style={{ marginBottom: 0, position: 'relative' }}>
-                                <div style={{ position: 'absolute', top: '1rem', right: '1rem' }}>
-                                    <span className={`status-tag ${c.caseStatus === 'SUBMITTED' ? '' : 'status-active'}`} style={c.caseStatus === 'SUBMITTED' ? { background: '#fefcbf', color: '#744210' } : {}}>
+                            <div key={c.id} className="step-card case-list-card" style={{ marginBottom: 0 }}>
+                                {/* Header row: status badge */}
+                                <div className="case-card-header">
+                                    <span className="metadata-label" style={{ margin: 0 }}>CASE ID</span>
+                                    <span className={`status-tag ${c.caseStatus === 'SUBMITTED' ? '' : 'status-active'}`}
+                                        style={c.caseStatus === 'SUBMITTED' ? { background: '#fefcbf', color: '#744210' } : {}}>
                                         {c.caseStatus === 'SUBMITTED' ? 'Filed' : 'Draft'}
                                     </span>
                                 </div>
 
-                                <span className="metadata-label">CASE ID</span>
-                                <div className="case-id" style={{ display: 'inline-block', marginBottom: '1rem' }}>{c.id}</div>
+                                {/* Case ref */}
+                                <div className="case-id" style={{ display: 'inline-block', marginBottom: '0.75rem' }}>{c.id}</div>
 
-                                <div className="sidebar-heading" style={{ fontSize: '0.7rem' }}>Regulatory Framework</div>
-                                <p style={{ fontWeight: 600, fontSize: '0.9rem', marginBottom: '1.5rem', minHeight: '3em' }}>
-                                    {c.research?.baseJustification || 'Pending Assessment'}
-                                </p>
+                                {/* Title */}
+                                <h4 className="case-card-title">{c.title}</h4>
 
-                                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                                {/* Framework + date row */}
+                                <div className="case-card-meta">
+                                    <span className="case-card-framework">{c.research?.baseJustification || 'Pending Assessment'}</span>
+                                    {c.createdAt && (
+                                        <span className="case-card-date">{formatDate(c.createdAt)}</span>
+                                    )}
+                                </div>
+
+                                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1.25rem' }}>
                                     <button className="btn-primary" style={{ flex: 1, fontSize: '0.8rem' }} onClick={() => onSelectCase(c.id)}>
                                         {c.caseStatus === 'SUBMITTED' ? 'Manage Engagement' : 'Resume Assessment'}
                                     </button>
