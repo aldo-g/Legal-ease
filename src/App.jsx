@@ -474,6 +474,8 @@ function App() {
                     info={activeCase?.formData}
                     research={activeCase?.research}
                     onSubmit={handleMarkAsFiled}
+                    caseRef={activeCase?.id}
+                    userEmail={user?.email}
                   />
                 </div>,
                 { noRefs: true }

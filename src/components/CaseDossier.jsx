@@ -1,4 +1,5 @@
 import { useState, useRef } from 'react';
+import { CaseService } from '../utils/CaseService';
 
 // Determine whether a timeline step is "send" intent (should link to correspondence tab)
 function isSendStep(step) {
@@ -21,10 +22,12 @@ const STATUS_LABELS = {
     complete: 'Complete',
 };
 
-const CaseDossier = ({ plan, info, research, onSubmit }) => {
+const CaseDossier = ({ plan, info, research, onSubmit, caseRef, userEmail }) => {
     const [activeTab, setActiveTab] = useState('timeline');
     const [copied, setCopied] = useState(false);
     const [emailSent, setEmailSent] = useState(false);
+    const [sending, setSending] = useState(false);
+    const [sendError, setSendError] = useState(null);
     const [uploadedFiles, setUploadedFiles] = useState({}); // { [itemIndex]: File }
     const [stepStatuses, setStepStatuses] = useState(() =>
         initStepStatuses(plan?.timeline || [])
@@ -55,28 +58,50 @@ const CaseDossier = ({ plan, info, research, onSubmit }) => {
         return body;
     };
 
+    const markEmailSent = () => {
+        setEmailSent(true);
+        setStepStatuses(prev => {
+            const next = [...prev];
+            const sendIdx = timeline.findIndex(isSendStep);
+            if (sendIdx >= 0) next[sendIdx] = 'complete';
+            const nextIdx = (sendIdx >= 0 ? sendIdx : 0) + 1;
+            if (nextIdx < next.length && next[nextIdx] === 'awaiting') {
+                next[nextIdx] = 'ready';
+            }
+            return next;
+        });
+    };
+
+    const handleSendClaim = async () => {
+        setSendError(null);
+        setSending(true);
+        try {
+            await CaseService.sendClaimEmail({
+                to: email.recipientEmail,
+                subject: email.subject,
+                body: buildEmailBody(),
+                replyTo: userEmail || undefined,
+                caseRef: caseRef || undefined,
+            });
+            markEmailSent();
+            // Auto-submit the case to move it to tracking
+            onSubmit();
+        } catch (err) {
+            setSendError(err.message || 'Failed to send. Please try the fallback option.');
+        } finally {
+            setSending(false);
+        }
+    };
+
     const handleOpenMailClient = () => {
         const subject = encodeURIComponent(email.subject || '');
         const body = encodeURIComponent(buildEmailBody());
         const to = email.recipientEmail || '';
         window.open(`mailto:${to}?subject=${subject}&body=${body}`, '_self');
-
-        // Prompt to mark as sent
         setTimeout(() => {
-            if (window.confirm('Mark this correspondence as sent?')) {
-                setEmailSent(true);
-                setStepStatuses(prev => {
-                    const next = [...prev];
-                    // Find the first send-intent step and mark complete
-                    const sendIdx = timeline.findIndex(isSendStep);
-                    if (sendIdx >= 0) next[sendIdx] = 'complete';
-                    // Unlock next step
-                    const nextIdx = (sendIdx >= 0 ? sendIdx : 0) + 1;
-                    if (nextIdx < next.length && next[nextIdx] === 'awaiting') {
-                        next[nextIdx] = 'ready';
-                    }
-                    return next;
-                });
+            if (window.confirm('Mark correspondence as sent?')) {
+                markEmailSent();
+                onSubmit();
             }
         }, 500);
     };
@@ -279,13 +304,25 @@ const CaseDossier = ({ plan, info, research, onSubmit }) => {
                             )}
                             {attachmentList.length > 0 && (
                                 <div className="send-banner-attachments">
-                                    {attachmentList.length} file{attachmentList.length > 1 ? 's' : ''} attached
+                                    {attachmentList.length} file{attachmentList.length > 1 ? 's' : ''} attached — listed in email body
+                                </div>
+                            )}
+                            {!emailSent && (
+                                <div className="send-banner-fallback">
+                                    Prefer to send manually?{' '}
+                                    <button className="send-banner-fallback-btn" onClick={handleOpenMailClient}>
+                                        Open in email client
+                                    </button>
                                 </div>
                             )}
                         </div>
                         <div className="send-banner-actions">
-                            <button className="btn-primary" onClick={handleOpenMailClient}>
-                                Open in Email Client
+                            <button
+                                className="btn-primary"
+                                onClick={handleSendClaim}
+                                disabled={sending || emailSent}
+                            >
+                                {sending ? 'Sending…' : emailSent ? '✓ Sent' : 'Send Claim'}
                             </button>
                             <button className="btn-secondary" onClick={handleCopyEmail}>
                                 {copied ? 'Copied!' : 'Copy'}
@@ -295,6 +332,12 @@ const CaseDossier = ({ plan, info, research, onSubmit }) => {
                             </button>
                         </div>
                     </div>
+
+                    {sendError && (
+                        <div style={{ marginTop: '0.75rem', padding: '0.75rem 1rem', background: '#fff5f5', border: '1px solid #feb2b2', borderRadius: '4px', fontSize: '0.85rem', color: '#c53030' }}>
+                            <strong>Send failed:</strong> {sendError}
+                        </div>
+                    )}
 
                     {/* Subject line */}
                     {email.subject && (
